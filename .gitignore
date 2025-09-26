@@ -43,3 +43,8 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+
+# C:\PROJECTS\Assignment_Project\New_ERA_Project\new_era_assignment\lib\firebase_options.dart
+/lib/firebase_options
+lib/firebase_options.dart
