@@ -8,6 +8,7 @@ class Teams extends StatefulWidget {
   @override
   State<Teams> createState() => _TeamsState();
 }
+// teams page where we can follow and unfollow them
 
 class _TeamsState extends State<Teams> {
   final _firebaseDb = FirebaseFirestore.instance;

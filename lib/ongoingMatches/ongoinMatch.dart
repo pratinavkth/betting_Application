@@ -25,6 +25,52 @@ class _OngoinmatchState extends State<Ongoinmatch> {
   int betAmount = 0;
   String? selectedWinner;
 
+  // Cache the futures to prevent re-execution
+  Future<Map<String, dynamic>?>? _eventDataFuture;
+  Future<Map<String, String>>? _teamNamesFuture;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+
+    // Initialize teamId and futures only once
+    if (teamId == null) {
+      final args =
+          ModalRoute.of(context)!.settings.arguments as Map<String, dynamic>;
+      teamId = args['docId'];
+
+      // Cache the futures
+      _eventDataFuture = eventData(teamId!);
+      _eventDataFuture!.then((eventDetails) {
+        if (eventDetails != null) {
+          final teamIds = List<String>.from(eventDetails["teams"] ?? []);
+          _teamNamesFuture = fetchTeamNames(teamIds);
+
+          // Initialize YouTube controller only once
+          final videoUrl = eventDetails["youtubeUrl"] ?? "";
+          if (videoUrl.isNotEmpty && _controller == null) {
+            final videoId = YoutubePlayer.convertUrlToId(videoUrl);
+            if (videoId != null) {
+              _controller = YoutubePlayerController(
+                initialVideoId: videoId,
+                flags: const YoutubePlayerFlags(autoPlay: false, mute: false),
+              );
+              setState(() {}); // Only rebuild once for controller
+            }
+          }
+        }
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller?.dispose();
+    _chatController.dispose();
+    _betAmountController.dispose();
+    super.dispose();
+  }
+
   Future<Map<String, dynamic>?> eventData(String teamId) async {
     try {
       final snapshot = await _firebaseDb.collection("Events").doc(teamId).get();
@@ -128,14 +174,14 @@ class _OngoinmatchState extends State<Ongoinmatch> {
 
   @override
   Widget build(BuildContext context) {
-    final args =
-        ModalRoute.of(context)!.settings.arguments as Map<String, dynamic>;
-    teamId ??= args['docId'];
+    if (teamId == null) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
 
     return Scaffold(
       appBar: AppBar(title: const Text("Event Details")),
       body: FutureBuilder<Map<String, dynamic>?>(
-        future: eventData(teamId!),
+        future: _eventDataFuture, // Use cached future
         builder: (context, eventSnap) {
           if (eventSnap.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
@@ -148,22 +194,10 @@ class _OngoinmatchState extends State<Ongoinmatch> {
           }
 
           final eventDetails = eventSnap.data!;
-          final videoUrl = eventDetails["youtubeUrl"] ?? "";
-          final teamIds = List<String>.from(eventDetails["teams"] ?? []);
           final winnerFromDb = eventDetails["winner"];
 
-          if (videoUrl.isNotEmpty && _controller == null) {
-            final videoId = YoutubePlayer.convertUrlToId(videoUrl);
-            if (videoId != null) {
-              _controller = YoutubePlayerController(
-                initialVideoId: videoId,
-                flags: const YoutubePlayerFlags(autoPlay: false, mute: false),
-              );
-            }
-          }
-
           return FutureBuilder<Map<String, String>>(
-            future: fetchTeamNames(teamIds),
+            future: _teamNamesFuture, // Use cached future
             builder: (context, teamSnap) {
               if (teamSnap.connectionState == ConnectionState.waiting) {
                 return const Center(child: CircularProgressIndicator());
@@ -184,6 +218,7 @@ class _OngoinmatchState extends State<Ongoinmatch> {
 
               return Column(
                 children: [
+                  // YouTube Player
                   if (_controller != null)
                     YoutubePlayer(
                       controller: _controller!,
@@ -192,54 +227,22 @@ class _OngoinmatchState extends State<Ongoinmatch> {
                   else
                     const Text("No Video Available"),
 
-                  Card(
-                    margin: const EdgeInsets.all(8),
-                    child: Padding(
-                      padding: const EdgeInsets.all(12),
-                      child: Column(
-                        children: [
-                          const Text(
-                            "Place Your Bet",
-                            style: TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          DropdownButton<String>(
-                            value: selectedTeam,
-                            hint: const Text("Select Team"),
-                            items:
-                                teamsMap.entries.map((entry) {
-                                  return DropdownMenuItem(
-                                    value: entry.key,
-                                    child: Text(entry.value),
-                                  );
-                                }).toList(),
-                            onChanged: (val) {
-                              setState(() => selectedTeam = val);
-                            },
-                          ),
-                          TextField(
-                            controller: _betAmountController,
-                            decoration: const InputDecoration(
-                              labelText: "Bet Amount",
-                            ),
-                            keyboardType: TextInputType.number,
-                            onChanged: (val) {
-                              setState(
-                                () => betAmount = int.tryParse(val) ?? 0,
-                              );
-                            },
-                          ),
-                          ElevatedButton(
-                            onPressed: placeBet,
-                            child: const Text("Place Bet"),
-                          ),
-                        ],
-                      ),
-                    ),
+                  // Betting Section - Extracted to separate widget
+                  BettingCard(
+                    teamsMap: teamsMap,
+                    selectedTeam: selectedTeam,
+                    betAmountController: _betAmountController,
+                    onTeamChanged: (val) {
+                      selectedTeam = val; // Don't call setState here
+                    },
+                    onAmountChanged: (val) {
+                      betAmount =
+                          int.tryParse(val) ?? 0; // Don't call setState here
+                    },
+                    onPlaceBet: placeBet,
                   ),
 
+                  // Chat Section
                   Expanded(
                     child: StreamBuilder<QuerySnapshot>(
                       stream:
@@ -296,6 +299,7 @@ class _OngoinmatchState extends State<Ongoinmatch> {
                     ),
                   ),
 
+                  // Chat Input
                   Padding(
                     padding: const EdgeInsets.all(8.0),
                     child: Row(
@@ -317,6 +321,7 @@ class _OngoinmatchState extends State<Ongoinmatch> {
                     ),
                   ),
 
+                  // Winner Declaration
                   Card(
                     margin: const EdgeInsets.all(8),
                     child: Padding(
@@ -363,6 +368,84 @@ class _OngoinmatchState extends State<Ongoinmatch> {
             },
           );
         },
+      ),
+    );
+  }
+}
+
+// Separate StatefulWidget for betting section to isolate state changes
+class BettingCard extends StatefulWidget {
+  final Map<String, String> teamsMap;
+  final String? selectedTeam;
+  final TextEditingController betAmountController;
+  final Function(String?) onTeamChanged;
+  final Function(String) onAmountChanged;
+  final VoidCallback onPlaceBet;
+
+  const BettingCard({
+    Key? key,
+    required this.teamsMap,
+    required this.selectedTeam,
+    required this.betAmountController,
+    required this.onTeamChanged,
+    required this.onAmountChanged,
+    required this.onPlaceBet,
+  }) : super(key: key);
+
+  @override
+  State<BettingCard> createState() => _BettingCardState();
+}
+
+class _BettingCardState extends State<BettingCard> {
+  String? localSelectedTeam;
+
+  @override
+  void initState() {
+    super.initState();
+    localSelectedTeam = widget.selectedTeam;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      margin: const EdgeInsets.all(5),
+      child: Padding(
+        padding: const EdgeInsets.all(4),
+        child: Column(
+          children: [
+            const Text(
+              "Place Your Bet",
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+            DropdownButton<String>(
+              value: localSelectedTeam,
+              hint: const Text("Select Team"),
+              items:
+                  widget.teamsMap.entries.map((entry) {
+                    return DropdownMenuItem(
+                      value: entry.key,
+                      child: Text(entry.value),
+                    );
+                  }).toList(),
+              onChanged: (val) {
+                setState(() {
+                  localSelectedTeam = val;
+                });
+                widget.onTeamChanged(val);
+              },
+            ),
+            TextField(
+              controller: widget.betAmountController,
+              decoration: const InputDecoration(labelText: "Bet Amount"),
+              keyboardType: TextInputType.number,
+              onChanged: widget.onAmountChanged,
+            ),
+            ElevatedButton(
+              onPressed: widget.onPlaceBet,
+              child: const Text("Place Bet"),
+            ),
+          ],
+        ),
       ),
     );
   }

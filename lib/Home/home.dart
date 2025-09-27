@@ -11,7 +11,7 @@ class Home extends StatefulWidget {
   @override
   State<Home> createState() => _HomeState();
 }
-
+// home screen
 class _HomeState extends State<Home> {
   final _firebaseAuth = FirebaseAuth.instance;
   final _firebaseDb = FirebaseFirestore.instance;

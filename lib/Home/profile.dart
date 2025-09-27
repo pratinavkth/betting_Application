@@ -8,7 +8,7 @@ class Profile extends StatefulWidget {
   @override
   State<Profile> createState() => _ProfileState();
 }
-
+// profile page where we can se name and creditse
 class _ProfileState extends State<Profile> {
   final _firebaseAuth = FirebaseAuth.instance;
   final _firebaseDb = FirebaseFirestore.instance;

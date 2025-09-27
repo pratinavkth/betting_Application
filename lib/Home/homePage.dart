@@ -8,6 +8,7 @@ class Homepage extends StatefulWidget {
   State<Homepage> createState() => _HomepageState();
 }
 
+// then this homepage
 class _HomepageState extends State<Homepage> {
   final _firebaseDb = FirebaseFirestore.instance;
   Future<List<Map<String, dynamic>>> fetchNews() async {
